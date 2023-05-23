@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta http-equiv="x-ua-compatible" content="IE=edge"/>
+<title>Test results - Class ClientServerTest</title>
+<link href="../css/base-style.css" rel="stylesheet" type="text/css"/>
+<link href="../css/style.css" rel="stylesheet" type="text/css"/>
+<script src="../js/report.js" type="text/javascript"></script>
+</head>
+<body>
+<div id="content">
+<h1>Class ClientServerTest</h1>
+<div class="breadcrumbs">
+<a href="../index.html">all</a> &gt; 
+<a href="../packages/default-package.html">default-package</a> &gt; ClientServerTest</div>
+<div id="summary">
+<table>
+<tr>
+<td>
+<div class="summaryGroup">
+<table>
+<tr>
+<td>
+<div class="infoBox" id="tests">
+<div class="counter">7</div>
+<p>tests</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="failures">
+<div class="counter">0</div>
+<p>failures</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="ignored">
+<div class="counter">0</div>
+<p>ignored</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="duration">
+<div class="counter">26.704s</div>
+<p>duration</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</td>
+<td>
+<div class="infoBox success" id="successRate">
+<div class="percent">100%</div>
+<p>successful</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div id="tabs">
+<ul class="tabLinks">
+<li>
+<a href="#tab0">Tests</a>
+</li>
+<li>
+<a href="#tab1">Standard output</a>
+</li>
+</ul>
+<div id="tab0" class="tab">
+<h2>Tests</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Duration</th>
+<th>Result</th>
+</tr>
+</thead>
+<tr>
+<td class="success">closedConnectionTest()</td>
+<td class="success">2.018s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">improperDisconnectClient()</td>
+<td class="success">8.121s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">improperDisconnectServer()</td>
+<td class="success">4.566s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">multipleClients()</td>
+<td class="success">5.578s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">pingPong()</td>
+<td class="success">1.005s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">sendInfoStreams()</td>
+<td class="success">3.007s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">unreliable()</td>
+<td class="success">2.409s</td>
+<td class="success">passed</td>
+</tr>
+</table>
+</div>
+<div id="tab1" class="tab">
+<h2>Standard output</h2>
+<span class="code">
+<pre>=== MULTIPLE CLIENTS ===
+[SERVER] added endpoint: /192.168.1.70:50274
+[CLIENT 1] Received Client /192.168.1.70:50274 has connected.
+[SERVER] added endpoint: /192.168.1.70:50275
+[CLIENT 1] Received Client /192.168.1.70:50275 has connected.
+[CLIENT 2] Received Client /192.168.1.70:50275 has connected.
+[SERVER] Sending: 0
+[CLIENT 2] Received 0
+[CLIENT 1] Received 0
+[SERVER] Sending: 1
+[CLIENT 2] Received 1
+[CLIENT 1] Received 1
+[SERVER] Sending: 2
+[CLIENT 2] Received 2
+[CLIENT 1] Received 2
+[SERVER] Sending: 3
+[CLIENT 2] Received 3
+[CLIENT 1] Received 3
+[CLIENT 1] Disconnected
+[SERVER] removed endpoint: /192.168.1.70:50274
+[SERVER] Sending: 4
+[CLIENT 2] Received 4
+[SERVER] Sending: 5
+[CLIENT 2] Received 5
+[SERVER] Sending: 6
+[CLIENT 2] Received 6
+[SERVER] Sending: 7
+[CLIENT 2] Received 7
+[SERVER] Sending: 8
+[CLIENT 2] Received 8
+[SERVER] Sending: 9
+[CLIENT 2] Received 9
+[SERVER] removed endpoint: /192.168.1.70:50275
+[CLIENT 2] Disconnected
+[SERVER] Sending: 10
+Done
+
+=== PING PONG ===
+Server received 1
+Client received 1
+Server received 2
+Client received 2
+Server received 3
+Client received 3
+Server received 4
+Client received 4
+Server received 5
+Client received 5
+Server received 6
+Client received 6
+Server received 7
+Client received 7
+Server received 8
+Client received 8
+Server received 9
+Client received 9
+Server received 10
+Client received 10
+Server received 11
+Client received 11
+Server received 12
+Client received 12
+Server received 13
+Client received 13
+Server received 14
+Client received 14
+Server received 15
+Client received 15
+Server received 16
+Client received 16
+Called disconnect from server
+Client disconnected.
+Server disconnected
+Done
+
+=== CLOSED CONNECTION ===
+=== IMPROPER DC CLIENT ===
+[SERVER] Sending: 0
+[CLIENT] Received 0
+[SERVER] Sending: 1
+[CLIENT] Received 1
+[SERVER] Sending: 2
+[CLIENT] Received 2
+[SERVER] Sending: 3
+[CLIENT] Received 3
+[SERVER] Sending: 4
+[CLIENT] Received 4
+[SERVER] Sending: 5
+[CLIENT] Received 5
+[SERVER] Sending: 6
+[CLIENT] Received 6
+[SERVER] Sending: 7
+[CLIENT] Received 7
+[CLIENT] Disconnected.
+[SERVER] Sending: 8
+[SERVER] Sending: 9
+[SERVER] Sending: 10
+[SERVER] Sending: 11
+[SERVER] Sending: 12
+[SERVER] Sending: 13
+[SERVER] Sending: 14
+[SERVER] Disconnected.
+[SERVER] Sending: 15
+Done
+
+[CLIENT] 0: Received 0
+[CLIENT] 1: Received 1
+[CLIENT] 2: Received 2
+[CLIENT] 3: Received 3
+[CLIENT] 4: Received 4
+[CLIENT] 5: Received 5
+[CLIENT] 6: Received 6
+[CLIENT] 7: Received 7
+[CLIENT] 8: Received 8
+[CLIENT] 9: Received 9
+[CLIENT] 10: Received 10
+[CLIENT] 11: Received 11
+[CLIENT] 12: Received 12
+[CLIENT] 13: Received 13
+[CLIENT] 14: Received 14
+[CLIENT] 15: Received 15
+[CLIENT] 16: Received 16
+[CLIENT] 17: Received 17
+[CLIENT] 18: Received 18
+[CLIENT] 19: Received 19
+[CLIENT] 20: Received 20
+Done
+
+=== IMPROPER DC SERVER ===
+[CLIENT] Sending: 0
+[SERVER] Received 0
+[CLIENT] Sending: 1
+[SERVER] Received 1
+[CLIENT] Sending: 2
+[SERVER] Received 2
+[CLIENT] Sending: 3
+[SERVER] Received 3
+[CLIENT] Sending: 4
+[SERVER] Received 4
+[CLIENT] Sending: 5
+[SERVER] Received 5
+[CLIENT] Sending: 6
+[SERVER] Received 6
+[CLIENT] Sending: 7
+[SERVER] Received 7
+Done
+
+[CLIENT] Disconnected.
+=== SEND INFO STREAMS ===
+[CLIENT] Received: 1
+[CLIENT] Received: 2
+[CLIENT] Received: 3
+[CLIENT] Received: 4
+[CLIENT] Received: 5
+[CLIENT] Received: 6
+[CLIENT] Received: 7
+[CLIENT] Received: 8
+[CLIENT] Received: 9
+[SERVER] Received: 1
+[CLIENT] Received: 10
+[SERVER] Received: 2
+[CLIENT] Received: 11
+[SERVER] Received: 3
+[CLIENT] Received: 12
+[SERVER] Received: 4
+[CLIENT] Received: 13
+[SERVER] Received: 5
+[CLIENT] Received: 14
+[CLIENT] Received: 15
+[CLIENT] Received: 16
+[CLIENT] Received: 17
+[SERVER] Received: 6
+[CLIENT] Received: 18
+[SERVER] Received: 7
+[CLIENT] Received: 19
+[SERVER] Received: 8
+[CLIENT] Received: 20
+[SERVER] Received: 9
+[CLIENT] Received: 21
+[SERVER] Received: 10
+[CLIENT] Received: 22
+[SERVER] Received: 11
+[CLIENT] Received: 23
+[SERVER] Received: 12
+[CLIENT] Received: 24
+[SERVER] Received: 13
+[CLIENT] Received: 25
+[SERVER] Received: 14
+[CLIENT] Received: 26
+[CLIENT] Received: 27
+[SERVER] Received: 15
+[CLIENT] Received: 28
+[SERVER] Received: 16
+[CLIENT] Received: 29
+[SERVER] Received: 17
+[CLIENT] Received: 30
+[CLIENT] Received: 31
+[SERVER] Received: 18
+[CLIENT] Received: 32
+[SERVER] Received: 19
+[SERVER] Received: 20
+[CLIENT] Received: 33
+[SERVER] Received: 21
+[SERVER] Received: 22
+[CLIENT] Received: 34
+[CLIENT] Received: 35
+[SERVER] Received: 23
+[CLIENT] Received: 36
+[SERVER] Received: 24
+[CLIENT] Received: 37
+[CLIENT] Received: 38
+[CLIENT] Received: 39
+[SERVER] Received: 25
+[SERVER] Received: 26
+[SERVER] Received: 27
+[SERVER] Received: 28
+[CLIENT] Received: 40
+[SERVER] Received: 29
+[SERVER] Received: 30
+[SERVER] Received: 31
+[SERVER] Received: 32
+[SERVER] Received: 33
+[SERVER] Received: 34
+[SERVER] Received: 35
+[SERVER] Received: 36
+[SERVER] Received: 37
+[SERVER] Received: 38
+[SERVER] Received: 39
+Called disconnect at 40
+[SERVER] Received: 40
+Client was disconnected.
+Server was disconnected.
+Done
+
+</pre>
+</span>
+</div>
+</div>
+<div id="footer">
+<p>
+<div>
+<label class="hidden" id="label-for-line-wrapping-toggle" for="line-wrapping-toggle">Wrap lines
+<input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
+</label>
+</div>Generated by 
+<a href="http://www.gradle.org">Gradle 7.1</a> at May 22, 2023, 4:14:39 p.m.</p>
+</div>
+</div>
+</body>
+</html>
