@@ -25,6 +25,15 @@ public class Client implements ConnectionNotifier, Closeable{
 		this.handler.setClient(this);
 	}
 
+	public void setAddress(InetAddress address, int port) {
+		synchronized (isOpenLock) {
+			if (isOpen) {
+				throw new IllegalStateException("Tried to change address while connection is open.");
+			}
+		}
+		this.address = new InetSocketAddress(address, port);
+	}
+
 	public void connect() throws IOException {
 		this.connectionSocket = new DatagramSocket();
 		connectionSocket.setSoTimeout((int) ConnectionEndpoint.RESEND_DELAY_MS);
@@ -35,14 +44,17 @@ public class Client implements ConnectionNotifier, Closeable{
 			return;
 		}
 		connectionSocket.setSoTimeout(0);
+
 		endpoint = new ConnectionEndpoint(connectionSocket, address, sequenceNumbers[0], sequenceNumbers[1], handler);
 		endpoint.setNotifier(this);
 		isOpen = true;
-		handler.onConnect(address);
 
 		Thread recvThread = new Thread(this::listen);
 		recvThread.setDaemon(true);
 		recvThread.start();
+
+		endpoint.startHeartbeat();
+		handler.onConnect(address);
 	}
 
 	private boolean connectToRemote(int[] sequenceNumbers) throws IOException {
@@ -100,7 +112,7 @@ public class Client implements ConnectionNotifier, Closeable{
 						ackPacket, ackPacket.length, address);
 					connectionSocket.send(connectionPacket);
 					sequenceNumbers[0] = localSequenceNumber;
-					sequenceNumbers[1] = remoteSequenceNumber;
+					sequenceNumbers[1] = remoteSequenceNumber + 1;
 					state = STATE_COMPLETE;
 				}
 				default -> {
@@ -115,7 +127,12 @@ public class Client implements ConnectionNotifier, Closeable{
 		byte[] buffer = new byte[PacketUtils.MAX_PACKET_SIZE];
 		DatagramPacket recvPacket = new DatagramPacket(buffer, PacketUtils.MAX_PACKET_SIZE);
 
-		while (isOpen) {
+		while (true) {
+			synchronized (isOpenLock) {
+				if (!isOpen) {
+					break;
+				}
+			}
 			try {
 				connectionSocket.receive(recvPacket);
 			} catch (SocketException e) {

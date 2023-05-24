@@ -62,16 +62,22 @@ public class Server implements ConnectionNotifier, Closeable{
 				continue;
 			}
 
-			if (PacketUtils.isSYN(data)) {
+			byte flags = PacketUtils.getFlags(data);
+			if ((flags & (PacketUtils.SYN_MASK | PacketUtils.ACK_MASK)) == PacketUtils.SYN_MASK) {
 				establishNewConnection(recvAddress, data);
 			}
 			else {
-				if (PacketUtils.isACK(data) && pendingConnections.containsKey(recvPacket.getSocketAddress())) {
+				if ((flags & (PacketUtils.SYN_MASK | PacketUtils.ACK_MASK)) == PacketUtils.ACK_MASK && pendingConnections.containsKey(recvAddress)) {
 					respondToAck(recvAddress, data);
 				}
 				else {
-					ConnectionEndpoint endpoint = connections.get(recvAddress);
-					if (endpoint != null) {
+					ConnectionEndpoint endpoint;
+					if (connections.containsKey(recvAddress)) {
+						endpoint = connections.get(recvAddress);
+						endpoint.handlePacket(data);
+					}
+					else if (pendingConnections.containsKey(recvAddress)) {
+						endpoint = pendingConnections.get(recvAddress).endpoint;
 						endpoint.handlePacket(data);
 					}
 				}
@@ -90,19 +96,16 @@ public class Server implements ConnectionNotifier, Closeable{
 		int remoteSeqNum = PacketUtils.getSeqNum(data);
 		int thisSeqNum = 420;
 		byte[] packetData = PacketUtils.constructSYNACKPacket(thisSeqNum, remoteSeqNum);
-		DatagramPacket response = new DatagramPacket(packetData, packetData.length, recvAddress);
-		try {
-			sendRaw(response);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		pendingConnections.put(recvAddress, new PendingConnection(new int[]{thisSeqNum, remoteSeqNum}));
+		PendingConnection newConnection = new PendingConnection(recvAddress, thisSeqNum, remoteSeqNum + 1);
+		newConnection.endpoint.sendReliablePayload(packetData);
+		pendingConnections.put(recvAddress, newConnection);
+
 		synchronized (pendingConnectionTimer) {
-			pendingConnectionTimer.schedule(synackTimer(recvAddress, response), ConnectionEndpoint.RESEND_DELAY_MS);
+			pendingConnectionTimer.schedule(synackTimer(recvAddress, packetData), ConnectionEndpoint.RESEND_DELAY_MS);
 		}
 	}
 
-	private TimerTask synackTimer(SocketAddress recvAddress, DatagramPacket response) {
+	private TimerTask synackTimer(SocketAddress recvAddress, byte[] synAckResponse) {
 		return new TimerTask() {
 			@Override
 			public void run() {
@@ -112,16 +115,20 @@ public class Server implements ConnectionNotifier, Closeable{
 				}
 				if (connection.timeoutCount >= ConnectionEndpoint.RESEND_COUNT) {
 					pendingConnections.remove(recvAddress);
+					connection.endpoint.close();
 					return;
 				}
 				connection.timeoutCount++;
+				DatagramPacket response = new DatagramPacket(synAckResponse, synAckResponse.length, recvAddress);
 				try {
 					sendRaw(response);
 				} catch (IOException e) {
 					e.printStackTrace();
+					connection.endpoint.close();
+					return;
 				}
 				synchronized (pendingConnectionTimer) {
-					pendingConnectionTimer.schedule(synackTimer(recvAddress, response), ConnectionEndpoint.RESEND_DELAY_MS);
+					pendingConnectionTimer.schedule(synackTimer(recvAddress, synAckResponse), ConnectionEndpoint.RESEND_DELAY_MS);
 				}
 			}
 		};
@@ -131,20 +138,21 @@ public class Server implements ConnectionNotifier, Closeable{
 		if (connections.containsKey(recvAddress)) {
 			return;
 		}
-		int[] pendingInfo = pendingConnections.get(recvAddress).sequenceNumbers;
-		if (pendingInfo == null) {
+		ConnectionEndpoint pendingEndpoint = pendingConnections.get(recvAddress).endpoint;
+		if (pendingEndpoint == null) {
 			return;
 		}
 		int seqNum = PacketUtils.getSeqNum(data);
 		int ackNum = PacketUtils.getAckNum(data);
-		if (ackNum == pendingInfo[0] && seqNum == pendingInfo[1] + 1) {
-			ConnectionEndpoint endpoint = new ConnectionEndpoint(connectionSocket, recvAddress, pendingInfo[0], seqNum, handler);
-			endpoint.setNotifier(this);
-			connections.put(recvAddress, endpoint);
+		if (ackNum == pendingEndpoint.getExpectedSequenceNumber() && seqNum == pendingEndpoint.getRemoteSequenceNumber()) {
+			pendingEndpoint.handlePacket(data);
+			pendingEndpoint.setNotifier(this);
+			connections.put(recvAddress, pendingEndpoint);
 			pendingConnections.remove(recvAddress);
 			synchronized (numConnectionsLock) {
 				numConnections++;
 			}
+			pendingEndpoint.startHeartbeat();
 			handler.onConnect(recvAddress);
 		}
 	}
@@ -192,12 +200,16 @@ public class Server implements ConnectionNotifier, Closeable{
 
 	public void sendReliable(SocketAddress dst, byte[] data) {
 		ConnectionEndpoint endpoint = connections.get(dst);
-		endpoint.sendReliable(data);
+		if (endpoint != null) {
+			endpoint.sendReliable(data);
+		}
 	}
 
 	public void disconnect(SocketAddress dst) {
 		ConnectionEndpoint endpoint = connections.get(dst);
-		endpoint.disconnect();
+		if (endpoint != null) {
+			endpoint.disconnect();
+		}
 	}
 
 	public boolean isOpen() {
@@ -234,12 +246,12 @@ public class Server implements ConnectionNotifier, Closeable{
 		pendingConnections.clear();
 	}
 
-	private static class PendingConnection {
-		int[] sequenceNumbers;
+	private class PendingConnection {
+		ConnectionEndpoint endpoint;
 		int timeoutCount;
 
-		PendingConnection(int[] sequenceNumbers) {
-			this.sequenceNumbers = sequenceNumbers;
+		PendingConnection(SocketAddress address, int localSeqNum, int remoteSeqNum) {
+			endpoint = new ConnectionEndpoint(connectionSocket, address, localSeqNum, remoteSeqNum, handler);
 			this.timeoutCount = 0;
 		}
 	}

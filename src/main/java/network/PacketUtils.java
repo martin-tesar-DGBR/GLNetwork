@@ -13,6 +13,7 @@ public class PacketUtils {
 	static final byte ACK_MASK = (byte) (0x40 & 0xFF);
 	static final byte RELIABLE_MASK = (byte) (0x20 & 0xFF);
 	static final byte FIN_MASK = (byte) (0x10 & 0xFF);
+	static final byte HEARTBEAT_MASK = (byte) (0x08 & 0xFF);
 
 	public static byte[] constructUnreliablePacket(byte[] data) {
 		byte[] ret = new byte[HEADER_SIZE + data.length];
@@ -41,7 +42,7 @@ public class PacketUtils {
 	public static byte[] constructSYNPacket(int seqNum) {
 		byte[] ret = new byte[HEADER_SIZE];
 		ret[0] = VERSION_ID;
-		ret[1] = SYN_MASK;
+		ret[1] = SYN_MASK | RELIABLE_MASK;
 		ret[2] = (byte) ((seqNum >> 8) & 0xFF);
 		ret[3] = (byte) ((seqNum >> 0) & 0xFF);
 		ret[4] = 0;
@@ -52,7 +53,7 @@ public class PacketUtils {
 	public static byte[] constructSYNACKPacket(int seqNum, int ackNum) {
 		byte[] ret = new byte[HEADER_SIZE];
 		ret[0] = VERSION_ID;
-		ret[1] = SYN_MASK | ACK_MASK;
+		ret[1] = SYN_MASK | ACK_MASK | RELIABLE_MASK;
 		ret[2] = (byte) ((seqNum >> 8) & 0xFF);
 		ret[3] = (byte) ((seqNum >> 0) & 0xFF);
 		ret[4] = (byte) ((ackNum >> 8) & 0xFF);
@@ -86,6 +87,17 @@ public class PacketUtils {
 		byte[] ret = new byte[HEADER_SIZE];
 		ret[0] = VERSION_ID;
 		ret[1] = ACK_MASK | RELIABLE_MASK | FIN_MASK;
+		ret[2] = (byte) ((seqNum >> 8) & 0xFF);
+		ret[3] = (byte) ((seqNum >> 0) & 0xFF);
+		ret[4] = (byte) ((ackNum >> 8) & 0xFF);
+		ret[5] = (byte) ((ackNum >> 0) & 0xFF);
+		return ret;
+	}
+
+	public static byte[] constructHeartbeatPacket(int seqNum, int ackNum) {
+		byte[] ret = new byte[HEADER_SIZE];
+		ret[0] = VERSION_ID;
+		ret[1] = RELIABLE_MASK | HEARTBEAT_MASK;
 		ret[2] = (byte) ((seqNum >> 8) & 0xFF);
 		ret[3] = (byte) ((seqNum >> 0) & 0xFF);
 		ret[4] = (byte) ((ackNum >> 8) & 0xFF);

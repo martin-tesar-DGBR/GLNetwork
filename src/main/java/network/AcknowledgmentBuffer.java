@@ -123,6 +123,10 @@ public class AcknowledgmentBuffer {
 		return isAcked[index];
 	}
 
+	public synchronized int getExpectedSequenceNumber() {
+		return smallestSequenceNumber;
+	}
+
 	private int getOffset(int seqNum) {
 		return (seqNum - smallestSequenceNumber) & 0xFFFF;
 	}

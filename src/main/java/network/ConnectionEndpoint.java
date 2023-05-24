@@ -9,24 +9,29 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 class ConnectionEndpoint implements Closeable {
 	static final long RESEND_DELAY_MS = 500; // 0.5 seconds
 	static final int RESEND_COUNT = 4;
+	private static final long HEARTBEAT_RESEND_DELAY_MS = 3000; // 3 seconds
 
 	SocketAddress address;
-	ConnectionInfo info;
+	final ConnectionInfo info;
 	Handler handler;
 	Queue<byte[]> sendQueue = new ConcurrentLinkedQueue<>();
 
-	DatagramSocket socket;
+	final DatagramSocket socket;
 	boolean isOpen = true;
 	final Object isOpenLock = new Object();
 
 	ConnectionNotifier notifier;
 
-	Timer missingAckScheduler = new Timer();
+	final Timer timer = new Timer();
 
 	ConnectionEndpoint(DatagramSocket socket, SocketAddress address, int localSeqNum, int remoteSeqNum, Handler handler) {
+		this(socket, address, new ConnectionInfo(localSeqNum, remoteSeqNum), handler);
+	}
+
+	public ConnectionEndpoint(DatagramSocket socket, SocketAddress address, ConnectionInfo info, Handler handler) {
 		this.socket = socket;
 		this.address = address;
-		this.info = new ConnectionInfo(localSeqNum, remoteSeqNum);
+		this.info = info;
 		this.handler = handler;
 	}
 
@@ -48,6 +53,18 @@ class ConnectionEndpoint implements Closeable {
 		queueMessage(payload);
 	}
 
+	void sendReliablePayload(byte[] payload) {
+		synchronized (isOpenLock) {
+			if (!isOpen) {
+				return;
+			}
+		}
+		synchronized (info) {
+			info.localSequenceNumber++;
+		}
+		queueMessage(payload);
+	}
+
 	private void queueMessage(byte[] payload) {
 		if (info.ackBuffer.isFull() || !sendQueue.isEmpty()) {
 			sendQueue.add(payload);
@@ -55,6 +72,8 @@ class ConnectionEndpoint implements Closeable {
 		}
 		try {
 			sendReliableNoBufferCheck(payload);
+		} catch (SocketException e) {
+			close();
 		} catch (IOException e) {
 			e.printStackTrace();
 			close();
@@ -113,23 +132,34 @@ class ConnectionEndpoint implements Closeable {
 			info.receiveBuffer.add(data);
 		}
 		if (!PacketUtils.sequenceGreaterThan(seqNum, info.receiveBuffer.getMaxExpectedSequenceNumber()) && !PacketUtils.isFIN(data)) {
-			byte[] ackData = PacketUtils.constructACKPacket(info.localSequenceNumber, seqNum);
-			DatagramPacket ackPacket = new DatagramPacket(ackData, ackData.length, address);
-			try {
-				sendRaw(ackPacket);
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
+			ackRemotePacket(seqNum);
 		}
 		if (seqNum == info.receiveBuffer.getExpectedSequenceNumber()) {
 			byte[][] bufferedData = info.receiveBuffer.flush();
 			for (int i = 0; i < bufferedData.length; i++) {
-				if (PacketUtils.isFIN(bufferedData[i])) {
+				byte flags = PacketUtils.getFlags(bufferedData[i]);
+				if ((flags & (PacketUtils.RELIABLE_MASK | PacketUtils.FIN_MASK)) == (PacketUtils.RELIABLE_MASK | PacketUtils.FIN_MASK)) {
 					sendFINACK(bufferedData[i]);
 					break;
 				}
+				else if ((flags & (PacketUtils.RELIABLE_MASK | PacketUtils.HEARTBEAT_MASK)) == (PacketUtils.RELIABLE_MASK | PacketUtils.HEARTBEAT_MASK)) {
+					continue;
+				}
 				processRawPacket(bufferedData[i]);
 			}
+		}
+	}
+
+	private void ackRemotePacket(int seqNum) {
+		byte[] ackData = PacketUtils.constructACKPacket(info.localSequenceNumber, seqNum);
+		DatagramPacket ackPacket = new DatagramPacket(ackData, ackData.length, address);
+		try {
+			sendRaw(ackPacket);
+		} catch (SocketException e) {
+			close();
+		} catch (IOException e) {
+			e.printStackTrace();
+			close();
 		}
 	}
 
@@ -152,8 +182,8 @@ class ConnectionEndpoint implements Closeable {
 		DatagramPacket packet = new DatagramPacket(payload, payload.length, address);
 		sendRaw(packet);
 
-		synchronized (missingAckScheduler) {
-			missingAckScheduler.schedule(ackTimeout(seqNum), RESEND_DELAY_MS);
+		synchronized (timer) {
+			timer.schedule(ackTimeout(seqNum), RESEND_DELAY_MS);
 		}
 	}
 
@@ -176,8 +206,8 @@ class ConnectionEndpoint implements Closeable {
 					try {
 						sendRaw(packet);
 						if (isOpen) {
-							synchronized (missingAckScheduler) {
-								missingAckScheduler.schedule(ackTimeout(seqNum), RESEND_DELAY_MS);
+							synchronized (timer) {
+								timer.schedule(ackTimeout(seqNum), RESEND_DELAY_MS);
 							}
 						}
 					} catch (SocketException e) {
@@ -191,9 +221,43 @@ class ConnectionEndpoint implements Closeable {
 		};
 	}
 
+	void startHeartbeat() {
+		synchronized (timer) {
+			timer.schedule(new TimerTask() {
+				@Override
+				public void run() {
+					synchronized (isOpenLock) {
+						if (!isOpen) {
+							return;
+						}
+						sendHeartbeat();
+					}
+				}
+			}, 0, HEARTBEAT_RESEND_DELAY_MS);
+		}
+	}
+
+	private void sendHeartbeat() {
+		byte[] packet;
+		synchronized (info) {
+			packet = PacketUtils.constructHeartbeatPacket(info.localSequenceNumber, info.remoteSequenceNumber);
+		}
+		sendReliablePayload(packet);
+	}
+
 	void sendRaw(DatagramPacket packet) throws IOException {
 		synchronized (socket) {
 			socket.send(packet);
+		}
+	}
+
+	int getExpectedSequenceNumber() {
+		return this.info.ackBuffer.getExpectedSequenceNumber();
+	}
+
+	int getRemoteSequenceNumber() {
+		synchronized (info) {
+			return this.info.remoteSequenceNumber;
 		}
 	}
 
@@ -213,8 +277,8 @@ class ConnectionEndpoint implements Closeable {
 				return;
 			}
 			isOpen = false;
-			synchronized (missingAckScheduler) {
-				missingAckScheduler.cancel();
+			synchronized (timer) {
+				timer.cancel();
 			}
 			if (notifier != null) {
 				notifier.onDisconnect(address);

@@ -16,7 +16,7 @@ public class ClientServerTest {
 		ServerHandler serverHandler = new ServerHandler() {
 			@Override
 			public void onConnect(SocketAddress address) {
-
+				System.out.println("[SERVER] Connected " + address);
 			}
 
 			@Override
@@ -46,6 +46,7 @@ public class ClientServerTest {
 		ClientHandler clientHandler = new ClientHandler() {
 			@Override
 			public void onConnect(SocketAddress address) {
+				System.out.println("Client connected, sending 0");
 				String send = "0";
 				sendReliable(send.getBytes(StandardCharsets.UTF_8));
 			}
@@ -194,6 +195,9 @@ public class ClientServerTest {
 				if (count > 5) {
 					disconnect();
 				}
+				else {
+					sendReliable("received".getBytes(StandardCharsets.UTF_8));
+				}
 			}
 		};
 
@@ -218,6 +222,9 @@ public class ClientServerTest {
 				if (count > 10) {
 					disconnect();
 				}
+				else {
+					sendReliable("received".getBytes(StandardCharsets.UTF_8));
+				}
 			}
 		};
 
@@ -235,8 +242,20 @@ public class ClientServerTest {
 			client2.connect();
 			int count = 0;
 			byte[] heartbeat = "ba dum".getBytes(StandardCharsets.UTF_8);
-			client1.sendReliable(heartbeat);
-			client2.sendReliable(heartbeat);
+			if (client1.isOpen()) {
+				client1.sendReliable(heartbeat);
+				System.out.println("[CLIENT 1] Opened at " + client1.getLocalAddress());
+			}
+			else {
+				System.out.println("Client 1 failed to open.");
+			}
+			if (client2.isOpen()) {
+				client2.sendReliable(heartbeat);
+				System.out.println("[CLIENT 2] Opened at " + client2.getLocalAddress());
+			}
+			else {
+				System.out.println("Client 2 failed to open.");
+			}
 			while (client1.isOpen() || client2.isOpen()) {
 				Thread.sleep(500);
 				System.out.println("[SERVER] Sending: " + count);
@@ -429,7 +448,70 @@ public class ClientServerTest {
 	}
 
 	@Test
+	public void inactiveConnections() {
+		System.out.println("=== INACTIVE CONNECTIONS ===");
+		ServerHandler serverHandler = new ServerHandler() {
+			@Override
+			public void onConnect(SocketAddress address) {
+				System.out.println("[SERVER] Connected " + address);
+			}
+
+			@Override
+			public void onDisconnect(SocketAddress address) {
+				System.out.println("[SERVER] Disconnected " + address);
+			}
+
+			@Override
+			public void onReceive(SocketAddress address, byte[] data) {
+				System.out.println("[SERVER] Received data.");
+			}
+		};
+
+		ClientHandler clientHandler = new ClientHandler() {
+			@Override
+			public void onConnect(SocketAddress address) {
+				System.out.println("[CLIENT] Connected");
+			}
+
+			@Override
+			public void onDisconnect(SocketAddress address) {
+				System.out.println("[CLIENT] Disconnected");
+			}
+
+			@Override
+			public void onReceive(SocketAddress address, byte[] data) {
+				System.out.println("[CLIENT] Received data.");
+			}
+		};
+
+		InetAddress address = null;
+		try {
+			address = InetAddress.getLocalHost();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		}
+
+		try (Server server = new Server(2678, serverHandler);
+			 Client client = new Client(address, 2678, clientHandler)) {
+			server.start();
+			client.connect();
+			while (client.isOpen()) {
+				Thread.sleep(5000);
+				if (server.isOpen()) {
+					System.out.println("5 seconds elapsed, closing server.");
+					server.close();
+				}
+				//wait for the connection to die
+			}
+			System.out.println("Done\n");
+		} catch (IOException | InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
 	public void unreliable() {
+		System.out.println("=== UNRELIABLE ===");
 		ServerHandler serverHandler = new ServerHandler() {
 			@Override
 			public void onConnect(SocketAddress address) {
