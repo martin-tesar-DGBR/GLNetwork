@@ -6,7 +6,7 @@ import java.net.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class Server implements ConnectionNotifier, Closeable{
+public class Server implements ConnectionNotifier, Closeable {
 	int port;
 	boolean isOpen = false;
 	final Object isOpenLock = new Object();
@@ -20,13 +20,25 @@ public class Server implements ConnectionNotifier, Closeable{
 
 	Timer pendingConnectionTimer = new Timer();
 
+	public Server(int port) {
+		this.port = port;
+	}
+
 	public Server(int port, ServerHandler handler) {
 		this.port = port;
 		this.handler = handler;
 		this.handler.setServer(this);
 	}
 
+	public void setHandler(ServerHandler handler) {
+		this.handler = handler;
+		this.handler.setServer(this);
+	}
+
 	public void start() throws IOException {
+		if (this.handler == null) {
+			throw new IllegalStateException("No handler set.");
+		}
 		this.connectionSocket = new DatagramSocket(port);
 		isOpen = true;
 		Thread recvThread = new Thread(this::listen);
@@ -160,7 +172,7 @@ public class Server implements ConnectionNotifier, Closeable{
 	public void sendAllRaw(byte[] data) {
 		byte[] header = PacketUtils.constructUnreliablePacket(data);
 		for (ConnectionEndpoint endpoint : connections.values()) {
-			DatagramPacket packet = new DatagramPacket(header, header.length, endpoint.address);
+			DatagramPacket packet = new DatagramPacket(header, header.length, endpoint.getAddress());
 			try {
 				endpoint.sendRaw(packet);
 			} catch (SocketException e) {

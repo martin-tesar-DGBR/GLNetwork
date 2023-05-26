@@ -11,18 +11,22 @@ class ConnectionEndpoint implements Closeable {
 	static final int RESEND_COUNT = 4;
 	private static final long HEARTBEAT_RESEND_DELAY_MS = 3000; // 3 seconds
 
-	SocketAddress address;
-	final ConnectionInfo info;
-	Handler handler;
-	Queue<byte[]> sendQueue = new ConcurrentLinkedQueue<>();
+	private SocketAddress address;
+	private final ConnectionInfo info;
+	private Handler handler;
+	private Queue<byte[]> sendQueue = new ConcurrentLinkedQueue<>();
 
-	final DatagramSocket socket;
-	boolean isOpen = true;
-	final Object isOpenLock = new Object();
+	private final DatagramSocket socket;
+	private boolean isOpen = true;
+	private final Object isOpenLock = new Object();
 
-	ConnectionNotifier notifier;
+	private byte[][] chunkedMessageBuffer = new byte[PacketUtils.MAX_NUM_CHUNKS][];
+	private int expectedNumChunks = 0;
+	private int numChunksReceived = 0;
 
-	final Timer timer = new Timer();
+	private ConnectionNotifier notifier;
+
+	private final Timer timer = new Timer();
 
 	ConnectionEndpoint(DatagramSocket socket, SocketAddress address, int localSeqNum, int remoteSeqNum, Handler handler) {
 		this(socket, address, new ConnectionInfo(localSeqNum, remoteSeqNum), handler);
@@ -45,12 +49,27 @@ class ConnectionEndpoint implements Closeable {
 				return;
 			}
 		}
-		byte[] payload;
-		synchronized (info) {
-			payload = PacketUtils.constructReliablePacket(data, info.localSequenceNumber, info.remoteSequenceNumber);
-			info.localSequenceNumber++;
+		if (data.length > PacketUtils.MAX_DATA_PER_CHUNK) {
+			if (data.length > PacketUtils.MAX_PAYLOAD_SIZE) {
+				throw new IllegalArgumentException("Payload size " + data.length + " is too large to be sent.");
+			}
+			byte[][] payloads;
+			synchronized (info) {
+				payloads = PacketUtils.constructReliableChunkedPackets(data, info.localSequenceNumber);
+				info.localSequenceNumber += payloads.length;
+			}
+			for (int i = 0; i < payloads.length; i++) {
+				queueMessage(payloads[i]);
+			}
 		}
-		queueMessage(payload);
+		else {
+			byte[] payload;
+			synchronized (info) {
+				payload = PacketUtils.constructReliablePacket(data, info.localSequenceNumber, info.remoteSequenceNumber);
+				info.localSequenceNumber++;
+			}
+			queueMessage(payload);
+		}
 	}
 
 	void sendReliablePayload(byte[] payload) {
@@ -126,6 +145,28 @@ class ConnectionEndpoint implements Closeable {
 		handler.onReceive(address, userData);
 	}
 
+	private void processFragmentedPacket(byte[] data) {
+		int numChunks = PacketUtils.getNumChunks(data);
+		if (numChunksReceived == expectedNumChunks) {
+			expectedNumChunks = numChunks;
+			numChunksReceived = 0;
+		}
+
+		if (expectedNumChunks == numChunks) {
+			int chunkIndex = PacketUtils.getChunkIndex(data);
+			chunkedMessageBuffer[chunkIndex] = data;
+			numChunksReceived++;
+		}
+		else {
+			throw new IllegalStateException("Received chunk not associated with current data.");
+		}
+
+		if (numChunksReceived == expectedNumChunks) {
+			byte[] userData = PacketUtils.assembleDataFromChunks(chunkedMessageBuffer, expectedNumChunks);
+			handler.onReceive(address, userData);
+		}
+	}
+
 	private void processReliablePacket(byte[] data) {
 		int seqNum = PacketUtils.getSeqNum(data);
 		if (info.receiveBuffer.inRange(seqNum) && !info.receiveBuffer.isOccupied(seqNum)) {
@@ -142,10 +183,15 @@ class ConnectionEndpoint implements Closeable {
 					sendFINACK(bufferedData[i]);
 					break;
 				}
-				else if ((flags & (PacketUtils.RELIABLE_MASK | PacketUtils.HEARTBEAT_MASK)) == (PacketUtils.RELIABLE_MASK | PacketUtils.HEARTBEAT_MASK)) {
+				if ((flags & (PacketUtils.RELIABLE_MASK | PacketUtils.HEARTBEAT_MASK)) == (PacketUtils.RELIABLE_MASK | PacketUtils.HEARTBEAT_MASK)) {
 					continue;
 				}
-				processRawPacket(bufferedData[i]);
+				if ((flags & (PacketUtils.CHUNKED_MASK)) == PacketUtils.CHUNKED_MASK) {
+					processFragmentedPacket(bufferedData[i]);
+				}
+				else {
+					processRawPacket(bufferedData[i]);
+				}
 			}
 		}
 	}
@@ -285,5 +331,15 @@ class ConnectionEndpoint implements Closeable {
 			}
 			handler.onDisconnect(address);
 		}
+	}
+
+	boolean isOpen() {
+		synchronized (isOpenLock) {
+			return isOpen;
+		}
+	}
+
+	public SocketAddress getAddress() {
+		return this.address;
 	}
 }

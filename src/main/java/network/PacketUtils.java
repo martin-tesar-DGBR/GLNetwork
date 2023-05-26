@@ -3,8 +3,59 @@ package network;
 public class PacketUtils {
 	private PacketUtils() {}
 
-	public static final int MAX_PACKETS_IN_FLIGHT = 32;
-	public static final int MAX_PACKET_SIZE = 1024;
+	/*
+	 * PACKET FORMAT:
+	 * each row is 16 bits, each column in a row separated by + is 8 bits
+	 * +-------------------------------+-------------------------------+
+	 * +                               + S | A | R | C | H | F |   |   +
+	 * +          PROTOCOL ID          + Y | C | L | N | B | I |   |   +
+	 * +                               + N | K | B | K | T | N |   |   +
+	 * +-------------------------------+-------------------------------+
+	 * +                                                               +
+	 * +                       SEQUENCE NUMBER                         +
+	 * +                                                               +
+	 * +-------------------------------+-------------------------------+
+	 * +                                                               +
+	 * +                          EXTRA DATA                           +
+	 * +                                                               +
+	 * +-------------------------------+-------------------------------+
+	 *
+	 * FLAG INFO:
+	 * 		SYN:
+	 * 			Used for initiating a connection between two endpoints. The endpoint that wishes to connect sends a
+	 * 			packet with only the SYN and RELIABLE flags set, and the sequence number field should contain the
+	 * 			sequence number this endpoint wishes to start at.
+	 * 			If both SYN and ACK bits are set, this indicates that the receiving endpoint has received a SYN, and is
+	 * 			responding to it with its own sequence number. The 'Extra Data' field should contain the sequence number
+	 * 			of the connection it is replying to, and the sequence number field should have the receiver's own
+	 * 			sequence number.
+	 * 		ACK:
+	 * 			Used as a response to a given message. The 'Extra Data' field should contain the sequence number the
+	 * 			acknowledgment is meant for. In general, reliable exchanges work as follows:
+	 * 				- Sender sends message with sequence number x
+	 * 				- Receiver sends back an ACK message with ack number the same x
+	 * 				- Sender's next message has sequence number x + 1
+	 * 		RLB:
+	 * 			Marks the message as reliable, and requires the receiver to respond with an ACK.
+	 * 		CNK:
+	 * 			Marks the message as chunked, which means the receiver should buffer these messages, and deliver the
+	 * 			full data once all chunks arrive.
+	 * 			The 'Extra Data' field has the number of expected chunks in the first octet, interpreted as an
+	 * 			unsigned integer plus one (e.g. 0 => 1 chunk, 1 => 2 chunks, ... , 255 => 256 chunks), and which
+	 * 			chunk the message corresponds to in the second octet.
+	 * 		HBT:
+	 * 			Marks the message as a heartbeat, which means that the packet contains no data but the sender expects
+	 * 			an acknowledgment anyway. This is meant to make sure the connection is still alive on both ends even if
+	 * 			both sides aren't sending any user messages.
+	 * 		FIN:
+	 * 			Marks the message as a disconnect message. The disconnect protocol is as follows:
+	 * 				- Sender sends a reliable FIN message. No further messages should be accepted after this one.
+	 * 				- Receiver sends a FIN-ACK message, with both FIN and ACK flags set. Receiver closes their endpoint.
+	 * 				- Sender receives the FIN-ACK, and closes their endpoint.
+	 * 			If at any point during this process the messages don't arrive and/or the message times out, both sides
+	 * 			will end up closing their connection anyway. It is up to the user to decide when is a good time to close
+	 * 			the connection, as the receiver may be in the middle of transmitting data when it receives a FIN.
+	 */
 
 	static final int HEADER_SIZE = 6;
 	static final byte VERSION_ID = (byte) 0xAA;
@@ -12,8 +63,15 @@ public class PacketUtils {
 	static final byte SYN_MASK = (byte) (0x80 & 0xFF);
 	static final byte ACK_MASK = (byte) (0x40 & 0xFF);
 	static final byte RELIABLE_MASK = (byte) (0x20 & 0xFF);
-	static final byte FIN_MASK = (byte) (0x10 & 0xFF);
+	static final byte CHUNKED_MASK = (byte) (0x10 & 0xFF);
 	static final byte HEARTBEAT_MASK = (byte) (0x08 & 0xFF);
+	static final byte FIN_MASK = (byte) (0x04 & 0xFF);
+
+	public static final int MAX_PACKETS_IN_FLIGHT = 32;
+	public static final int MAX_PACKET_SIZE = 1024;
+	public static final int MAX_NUM_CHUNKS = 256;
+	public static final int MAX_DATA_PER_CHUNK = MAX_PACKET_SIZE - HEADER_SIZE;
+	public static final int MAX_PAYLOAD_SIZE = MAX_NUM_CHUNKS * (MAX_PACKET_SIZE - HEADER_SIZE);
 
 	public static byte[] constructUnreliablePacket(byte[] data) {
 		byte[] ret = new byte[HEADER_SIZE + data.length];
@@ -105,6 +163,37 @@ public class PacketUtils {
 		return ret;
 	}
 
+	public static byte[][] constructReliableChunkedPackets(byte[] data, int seqNum) {
+		if (data.length > MAX_PAYLOAD_SIZE) {
+			throw new IllegalArgumentException("Data length " + data.length + " exceeds maximum payload size " + MAX_PAYLOAD_SIZE);
+		}
+		int numChunks = data.length / MAX_DATA_PER_CHUNK + (data.length % MAX_DATA_PER_CHUNK == 0 ? 0 : 1); //ceiling division
+		byte[][] chunkedData = new byte[numChunks][];
+		for (int i = 0; i < numChunks; i++) {
+			int chunkedDataLength = i == chunkedData.length - 1 ? (data.length % MAX_DATA_PER_CHUNK) + HEADER_SIZE : MAX_PACKET_SIZE;
+			chunkedData[i] = new byte[chunkedDataLength];
+			chunkedData[i][0] = VERSION_ID;
+			chunkedData[i][1] = RELIABLE_MASK | CHUNKED_MASK;
+			int chunkSeqNum = (seqNum + i) & 0xFFFF;
+			chunkedData[i][2] = (byte) ((chunkSeqNum >> 8) & 0xFF);
+			chunkedData[i][3] = (byte) ((chunkSeqNum >> 0) & 0xFF);
+			chunkedData[i][4] = (byte) ((numChunks - 1) & 0xFF);
+			chunkedData[i][5] = (byte) (i & 0xFF);
+			System.arraycopy(data, MAX_DATA_PER_CHUNK * i, chunkedData[i], HEADER_SIZE, chunkedDataLength - HEADER_SIZE);
+		}
+		return chunkedData;
+	}
+
+	public static byte[] assembleDataFromChunks(byte[][] chunkedData, int numChunks) {
+		byte[] data = new byte[((numChunks - 1) * MAX_DATA_PER_CHUNK) + (chunkedData[numChunks - 1].length - HEADER_SIZE)];
+		for (int i = 0, acc = 0; i < numChunks; i++) {
+			int chunkDataLength = chunkedData[i].length - HEADER_SIZE;
+			System.arraycopy(chunkedData[i], HEADER_SIZE, data, acc, chunkDataLength);
+			acc += chunkDataLength;
+		}
+		return data;
+	}
+
 	public static boolean isValidPacket(byte[] data) {
 		//TODO: add hashing check
 		return data.length >= 6 && data[0] == VERSION_ID;
@@ -168,6 +257,14 @@ public class PacketUtils {
 	public static int getAckNum(byte[] data) {
 		int ackNum = (((data[4] & 0xFF) << 8) | (data[5] & 0xFF)) & 0xFFFF;
 		return ackNum;
+	}
+
+	public static int getNumChunks(byte[] data) {
+		return (data[4] & 0xFF) + 1;
+	}
+
+	public static int getChunkIndex(byte[] data) {
+		return (data[5] & 0xFF);
 	}
 
 	public static boolean compareFlag(byte flags, int mask, int result) {

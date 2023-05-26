@@ -4,7 +4,11 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class ClientServerTest {
 	@Test
@@ -71,7 +75,8 @@ public class ClientServerTest {
 			}
 		};
 
-		try	(Server server = new Server(2678, serverHandler); Client client = new Client(InetAddress.getLocalHost(), 2678, clientHandler)) {
+		try	(Server server = new Server(2678, serverHandler);
+			 Client client = new Client(InetAddress.getLoopbackAddress(), 2678, clientHandler)) {
 			server.start();
 			client.connect();
 			while (client.isOpen()) {
@@ -228,12 +233,8 @@ public class ClientServerTest {
 			}
 		};
 
-		InetAddress address = null;
-		try {
-			address = InetAddress.getLocalHost();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}
+		InetAddress address = InetAddress.getLoopbackAddress();
+
 		try (Server server = new Server(2678, serverHandler);
 			 Client client1 = new Client(address, 2678, clientHandler1);
 			 Client client2 = new Client(address, 2678, clientHandler2)) {
@@ -313,12 +314,8 @@ public class ClientServerTest {
 			}
 		};
 
-		InetAddress address = null;
-		try {
-			address = InetAddress.getLocalHost();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}
+		InetAddress address = InetAddress.getLoopbackAddress();
+
 		try (Server server = new Server(2678, serverHandler);
 			 Client client = new Client(address, 2678, clientHandler)) {
 			server.start();
@@ -386,12 +383,8 @@ public class ClientServerTest {
 			}
 		};
 
-		InetAddress address = null;
-		try {
-			address = InetAddress.getLocalHost();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}
+		InetAddress address = InetAddress.getLoopbackAddress();
+
 		try (Server server = new Server(2678, serverHandler);
 			 Client client = new Client(address, 2678, clientHandler)) {
 			server.start();
@@ -418,12 +411,7 @@ public class ClientServerTest {
 	@Test
 	public void closedConnectionTest() {
 		System.out.println("=== CLOSED CONNECTION ===");
-		InetAddress address = null;
-		try {
-			address = InetAddress.getLocalHost();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
-		}
+		InetAddress address = InetAddress.getLoopbackAddress();
 
 		try (Client client = new Client(address, 2678, new ClientHandler() {
 			@Override
@@ -571,6 +559,139 @@ public class ClientServerTest {
 			}
 			System.out.println("Done\n");
 		} catch (IOException | InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void largeMessage() {
+		System.out.println("=== LARGE MESSAGE ===");
+
+		final byte[][] dataReceived = new byte[1][];
+		final Object dataReceivedLock = new Object();
+
+		ServerHandler serverHandler = new ServerHandler() {
+			@Override
+			public void onConnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onDisconnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onReceive(SocketAddress address, byte[] data) {
+
+			}
+		};
+
+		ClientHandler clientHandler = new ClientHandler() {
+			@Override
+			public void onConnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onDisconnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onReceive(SocketAddress address, byte[] data) {
+				System.out.println("[CLIENT] Received data of size: " + data.length);
+				synchronized (dataReceivedLock) {
+					dataReceived[0] = new byte[data.length];
+					System.arraycopy(data, 0, dataReceived[0], 0, data.length);
+				}
+				disconnect();
+			}
+		};
+
+		InetAddress address = InetAddress.getLoopbackAddress();
+
+		try (Server server = new Server(2678, serverHandler);
+			 Client client = new Client(address, 2678, clientHandler)) {
+			server.start();
+			client.connect();
+
+			String fileContents = Files.readString(Paths.get("src/test/resources/the-full-bee-movie-script.txt"), StandardCharsets.UTF_8);
+			byte[] data = fileContents.getBytes(StandardCharsets.UTF_8);
+			System.out.println("File contents length: " + data.length);
+			server.sendAllReliable(data);
+			while (client.isOpen()) {
+				Thread.sleep(100);
+			}
+			String received = new String(dataReceived[0], StandardCharsets.UTF_8);
+			assertEquals(received, fileContents);
+			System.out.println("Done\n");
+		} catch (IOException | InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	@Test
+	public void dataTooLarge() {
+		System.out.println("=== VERY LARGE MESSAGE ===");
+
+		ServerHandler serverHandler = new ServerHandler() {
+			@Override
+			public void onConnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onDisconnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onReceive(SocketAddress address, byte[] data) {
+				System.out.println("[SERVER] Received packet of length " + data.length);
+				disconnect(address);
+			}
+		};
+
+		ClientHandler clientHandler = new ClientHandler() {
+			@Override
+			public void onConnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onDisconnect(SocketAddress address) {
+
+			}
+
+			@Override
+			public void onReceive(SocketAddress address, byte[] data) {
+
+			}
+		};
+
+		InetAddress address = InetAddress.getLoopbackAddress();
+
+		try (Server server = new Server(2678, serverHandler);
+			 Client client = new Client(address, 2678, clientHandler)) {
+			server.start();
+			client.connect();
+
+			byte[] largeData;
+			try {
+				largeData = Files.readAllBytes(Paths.get("src/test/resources/sticksinner.jpg"));
+			} catch (IOException e) {
+				System.out.println("Could not get large data.");
+				return;
+			}
+
+			System.out.println("Large data length: " + largeData.length);
+
+			assertThrows(IllegalArgumentException.class, () -> {
+				client.sendReliable(largeData);
+			});
+
+		} catch (IOException e) {
 			e.printStackTrace();
 		}
 	}

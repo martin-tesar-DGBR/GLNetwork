@@ -4,7 +4,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.*;
 
-public class Client implements ConnectionNotifier, Closeable{
+public class Client implements ConnectionNotifier, Closeable {
 	private static final int STATE_SYN = 0;
 	private static final int STATE_SYN_ACK = 1;
 	private static final int STATE_ACK = 2;
@@ -19,10 +19,13 @@ public class Client implements ConnectionNotifier, Closeable{
 
 	ClientHandler handler;
 
+	public Client(InetAddress address, int port) {
+		this.address = new InetSocketAddress(address, port);
+	}
+
 	public Client(InetAddress address, int port, ClientHandler handler) {
 		this.address = new InetSocketAddress(address, port);
-		this.handler = handler;
-		this.handler.setClient(this);
+		setHandler(handler);
 	}
 
 	public void setAddress(InetAddress address, int port) {
@@ -34,7 +37,15 @@ public class Client implements ConnectionNotifier, Closeable{
 		this.address = new InetSocketAddress(address, port);
 	}
 
+	public void setHandler(ClientHandler handler) {
+		this.handler = handler;
+		this.handler.setClient(this);
+	}
+
 	public void connect() throws IOException {
+		if (handler == null) {
+			throw new IllegalStateException("No handler set.");
+		}
 		this.connectionSocket = new DatagramSocket();
 		connectionSocket.setSoTimeout((int) ConnectionEndpoint.RESEND_DELAY_MS);
 		int[] sequenceNumbers = new int[2]; //first index local sequence number to start, second index remote
@@ -200,7 +211,7 @@ public class Client implements ConnectionNotifier, Closeable{
 				return;
 			}
 		}
-		if (endpoint != null && endpoint.isOpen) {
+		if (endpoint != null && endpoint.isOpen()) {
 			endpoint.close();
 		}
 		onDisconnect(address);
